@@ -1,0 +1,16 @@
+__pycache__/
+cub-1.10.0/
+meshudf/__pycache__/
+meshudf/_marching_cubes_lewiner_cy.cpp
+meshudf/_marching_cubes_lewiner_cy.cpython-38-x86_64-linux-gnu.so
+meshudf/build/
+models/__pycache__/
+output/
+smpl_pytorch/__pycache__/
+CLOTH3D/
+dataset/
+logs/
+smpl_pytorch/basicModel_f_lbs_10_207_0_v1.0.0.pkl
+smpl_pytorch/basicModel_m_lbs_10_207_0_v1.0.0.pkl
+testing/
+env/
