@@ -1,29 +1,21 @@
 import sys
 
 sys.path.append("..")
-from pathlib import Path
-import torch
-import numpy as np
-from hesiod import get_out_dir, hcfg, hmain
-from torch.utils.data import DataLoader, Dataset
 
+from pathlib import Path
+import numpy as np
+import torch
+from hesiod import get_out_dir, hcfg, hmain
+from torch.utils.data import DataLoader
+
+from data.cloth3d import Cloth3d
 from models.dgcnn import Dgcnn
 from utils import progress_bar, random_point_sampling
 
-if len(sys.argv) != 2:
-    print("Usage: python export_codes.py <run_cfg_file>")
-    exit(1)
+# if len(sys.argv) != 2:
+#     print("Usage: python export_codes.py <run_cfg_file>")
+#     exit(1)
 
-class SingleFileDataset(Dataset):
-    def __init__(self, npz_file):
-        self.data = np.load(npz_file)
-    
-    def __len__(self):
-        return len(self.data['pcd'])
-    
-    def __getitem__(self, idx):
-        pcd = self.data['pcd'][idx]
-        return pcd
 
 # @hmain(
 #     base_cfg_dir="../cfg/bases",
@@ -32,52 +24,42 @@ class SingleFileDataset(Dataset):
 #     out_dir_root="../logs",
 # )
 def main() -> None:
-    ckpt_path = '/mnt/d/DrapeNet-main/last_2999.pt'
-    ckpt = torch.load(ckpt_path, map_location=torch.device('cpu'))
+    ckpt_path = "/home/hello/drapenet/DrapeNet/logs/chkpt/last_2999.pt"
+    ckpt = torch.load(ckpt_path)
 
+    # Get configuration parameters
     num_points_pcd = 10000
     latent_size = 32
+
+    # Initialize the encoder model
     encoder = Dgcnn(latent_size)
     encoder.load_state_dict(ckpt["encoder"])
-    encoder = encoder.cpu()
+    encoder = encoder.cuda()
     encoder.eval()
 
-    top_npz_file = Path("/mnt/d/DrapeNet-main/testing/top.npz")
-    bottom_npz_file = Path("/mnt/d/DrapeNet-main/testing/bottom.npz")
+     # Load the single point cloud file (assuming it's in NPZ format)
+    point_cloud_file = Path("/home/hello/drapenet/shirt/udfs/Shirt.npz")
+    npz_data = np.load(point_cloud_file)
+    pcd = torch.tensor(npz_data["pcd"], dtype=torch.float32)  # Assuming "points" is the key for the point cloud data
+    pcd = pcd.unsqueeze(0).cuda()  # Add batch dimension and move to GPU
+    pcd = random_point_sampling(pcd, num_points_pcd)  # Assuming the file is a PyTorch tensor
 
-    bs = 1
 
-    print(f"Loading datasets: {top_npz_file} and {bottom_npz_file}")
+    # Generate latent codes
+    with torch.no_grad():
+        latent_codes = encoder(pcd)
+    # Save the latent codes
+    latent_codes = latent_codes.detach().cpu()
 
-    top_dset = SingleFileDataset(top_npz_file)
-    top_loader = DataLoader(top_dset, bs, num_workers=4)
-    bottom_dset = SingleFileDataset(bottom_npz_file)
-    bottom_loader = DataLoader(bottom_dset, bs, num_workers=4)
-    print("All loaded")
+    out_dir = Path("/home/hello/drapenet/shirt/codes")
+    out_dir.mkdir(exist_ok=True, parents=True)
 
-    for split, loader in [("top", top_loader), ("bottom", bottom_loader)]:
-        all_latent_codes = []
+    latent_codes_path = out_dir / f"{point_cloud_file.stem}_latent.pt"
+    torch.save(latent_codes, latent_codes_path)
 
-        for batch_idx, batch in enumerate(progress_bar(loader, split)):
-            print(f"Processing batch {batch_idx}")
-            pcds = batch.cpu()
-            pcds = random_point_sampling(pcds, num_points_pcd)
+    mean_latent_code = torch.mean(latent_codes, dim=0)
+    torch.save(mean_latent_code, out_dir / f"{point_cloud_file.stem}_mean.pt")
 
-            with torch.no_grad():
-                latent_codes = encoder(pcds)
-
-            all_latent_codes.append(latent_codes.detach().cpu())
-
-        all_latent_codes = torch.cat(all_latent_codes, dim=0)
-        latent_codes_path = get_out_dir() / f"latent_codes/{split}_all.pt"
-        latent_codes_path.parent.mkdir(exist_ok=True, parents=True)
-        print(f"Saving all codes at {latent_codes_path}")
-        torch.save(all_latent_codes, latent_codes_path)
-
-        mean_latent_code = torch.mean(all_latent_codes, dim=0)
-        print(f"Saving mean points at {mean_latent_code}")
-        torch.save(mean_latent_code, latent_codes_path.parent / f"{split}_mean.pt")
-    print("Done Saving All.")
 
 if __name__ == "__main__":
     main()
